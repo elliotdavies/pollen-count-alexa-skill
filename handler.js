@@ -21,28 +21,34 @@ module.exports.handler = (event, context, callback) => {
     // When asked for the pollen count
     case 'GetPollenCount':
       console.log('Trying to get a postcode...');
-      // parseDetails(event)
-      //   .then(fetchPostcode)
-      //   .then(fetchLatLng)
-      // tmp until the Alexa app starts working...
-      fetchLatLng('SE19GF')
+      parseDetails(event)
+        .then(fetchPostcode)
+        .then(fetchLatLng)
         .then(fetchPollenForecast)
-        .then(count => {
-          reply({ speech: `The pollen count for today is ${count}` });
+        .then(({ postcode, count }) => {
+          const postcodeSsml = `<say-as interpret-as="spell-out">${postcode.replace(' ', '')}</say-as>`;
+          reply({
+            speech: `The pollen count for today at ${postcodeSsml} is <break strength="weak" /> ${count}.`,
+            card: {
+              type: 'Simple',
+              title: 'Pollen count',
+              content: `The pollen count for today at ${postcode} is ${count}.`,
+            },
+          });
         })
         .catch(err => {
           console.log('Error:', err);
-          reply(requestPostcodeResponse());
+          reply(requestPostcodeResponse);
         });
       break;
     // When asked for help
     case 'AMAZON.HelpIntent':
-      reply(helpResponse());
+      reply(helpResponse);
       break;
     // When asked to stop or cancel
     case 'AMAZON.StopIntent':
     case 'AMAZON.CancelIntent':
-      reply(stopResponse());
+      reply(stopResponse);
       break;
   }
 };
@@ -60,7 +66,7 @@ const parseDetails = event =>
       if (!deviceId || !consentToken || !apiEndpoint)
         return reject(`Failed to get identifiers`);
 
-      console.log('Got identifiers:', deviceId, consentToken, apiEndpoint);
+      // console.log('Got identifiers:', deviceId, consentToken, apiEndpoint);
       resolve({ deviceId, consentToken, apiEndpoint });
     } catch (e) {
       return reject(e);
@@ -91,13 +97,17 @@ const fetchLatLng = postcode =>
     .then(res => res.json())
     .then(json => {
       console.log('Got json:', json);
-      return { lat: json.result.latitude, lng: json.result.longitude };
+      return {
+        postcode,
+        lat: json.result.latitude,
+        lng: json.result.longitude,
+      };
     });
 
 /**
  * Use the latitude and longitude to get the pollen forecast
  */
-const fetchPollenForecast = ({ lat, lng }) =>
+const fetchPollenForecast = ({ postcode, lat, lng }) =>
   fetch(`https://socialpollencount.co.uk/api/forecast?location=[${lat},${lng}]`)
     .then(res => res.json())
     .then(({ date, forecast }) => {
@@ -110,33 +120,35 @@ const fetchPollenForecast = ({ lat, lng }) =>
         }))
         .filter(f => f.date === now)[0];
 
-      return todayForecast.count;
+      const { count } = todayForecast;
+
+      return { postcode, count };
     });
 
 /**
  * Build a response that asks the user to grant access to their postcode
  */
-const requestPostcodeResponse = () => ({
+const requestPostcodeResponse = {
   speech: `Please visit the Alexa app to grant access to your postcode`,
   card: {
     type: 'AskForPermissionsConsent',
     permissions: ['read::alexa:device:all:address:country_and_postal_code'],
   },
-});
+};
 
 /**
  * Build a help response
  */
-const helpResponse = () => ({
+const helpResponse = {
   speech: `Try asking for the pollen count near you`,
-});
+};
 
 /**
  * Build a stop / cancel response
  */
-const stopResponse = () => ({
+const stopResponse = {
   speech: `Goodbye!`,
-});
+};
 
 /**
  * Reply to Alexa
@@ -155,8 +167,8 @@ const sendResponse = callback => ({ speech, card = null }) => {
     version: '1.0',
     response: {
       outputSpeech: {
-        type: 'PlainText',
-        text: speech,
+        type: 'SSML',
+        ssml: `<speak>${speech}</speak>`,
       },
       card: card || defaultCard,
       shouldEndSession: true,
