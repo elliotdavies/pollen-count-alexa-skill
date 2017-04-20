@@ -1,0 +1,16 @@
+{
+  "name": "pollen-count-alexa-skill",
+  "version": "1.0.0",
+  "description": "Alexa skill to get the pollen count",
+  "main": "handler.js",
+  "dependencies": {
+    "node-fetch": "^1.6.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Elliot Davies <elliot.a.davies@gmail.com>",
+  "license": "ISC"
+}
