@@ -1,16 +1,13 @@
 'use strict';
 
+const fetch = require('node-fetch');
+
+/**
+ * Entry point
+ */
 module.exports.handler = (event, context, callback) => {
   const { request } = event;
-
   console.log(JSON.stringify(request));
-
-  const { System } = event.context;
-  const deviceId = System.device.deviceId;
-  const consentToken = System.user.permissions.consentToken;
-  const apiEndpoint = System.apiEndpoint;
-
-  console.log(deviceId, consentToken, apiEndpoint);
 
   const reply = sendResponse(callback);
 
@@ -21,7 +18,22 @@ module.exports.handler = (event, context, callback) => {
   switch (intent) {
     // When the skill is opened without a command
     case 'Launch':
-      reply(helpResponse());
+    // When asked for the pollen count
+    case 'GetPollenCount':
+      console.log('Trying to get a postcode...');
+      // parseDetails(event)
+      //   .then(fetchPostcode)
+      //   .then(fetchLatLng)
+      // tmp until the Alexa app starts working...
+      fetchLatLng('SE19GF')
+        .then(fetchPollenForecast)
+        .then(count => {
+          reply({ speech: `The pollen count for today is ${count}` });
+        })
+        .catch(err => {
+          console.log('Error:', err);
+          reply(requestPostcodeResponse());
+        });
       break;
     // When asked for help
     case 'AMAZON.HelpIntent':
@@ -35,18 +47,110 @@ module.exports.handler = (event, context, callback) => {
   }
 };
 
-// Explain available commands
-const helpResponse = () => {
-  return `Try asking for the pollen count near you`;
-};
+/**
+ * Try to extract the device's various details
+ */
+const parseDetails = event =>
+  new Promise((resolve, reject) => {
+    try {
+      const deviceId = event.context.System.device.deviceId;
+      const consentToken = event.context.System.user.permissions.consentToken;
+      const apiEndpoint = event.context.System.apiEndpoint;
 
-// Stop / cancel
-const stopResponse = () => {
-  return `Goodbye!`;
-};
+      if (!deviceId || !consentToken || !apiEndpoint)
+        return reject(`Failed to get identifiers`);
 
-// Reply to Alexa
-const sendResponse = callback => speech => {
+      console.log('Got identifiers:', deviceId, consentToken, apiEndpoint);
+      resolve({ deviceId, consentToken, apiEndpoint });
+    } catch (e) {
+      return reject(e);
+    }
+  });
+
+/**
+ * Fetch the device's postcode
+ */
+const fetchPostcode = ({ deviceId, consentToken, apiEndpoint }) =>
+  fetch(
+    `${apiEndpoint}/v1/devices/${deviceId}/settings/address/countryAndPostalCode`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${consentToken}`,
+      },
+    }
+  )
+    .then(res => res.json())
+    .then(({ countryCode, postalCode }) => postalCode);
+
+/**
+ * Transform the postcode to a latitude and longitude
+ */
+const fetchLatLng = postcode =>
+  fetch(`https://api.postcodes.io/postcodes/${postcode}`)
+    .then(res => res.json())
+    .then(json => {
+      console.log('Got json:', json);
+      return { lat: json.result.latitude, lng: json.result.longitude };
+    });
+
+/**
+ * Use the latitude and longitude to get the pollen forecast
+ */
+const fetchPollenForecast = ({ lat, lng }) =>
+  fetch(`https://socialpollencount.co.uk/api/forecast?location=[${lat},${lng}]`)
+    .then(res => res.json())
+    .then(({ date, forecast }) => {
+      // We get seven days of data back, so find today's
+      const now = new Date(date).getDate();
+      const todayForecast = forecast
+        .map(f => ({
+          date: new Date(f.date).getDate(),
+          count: f.pollen_count,
+        }))
+        .filter(f => f.date === now)[0];
+
+      return todayForecast.count;
+    });
+
+/**
+ * Build a response that asks the user to grant access to their postcode
+ */
+const requestPostcodeResponse = () => ({
+  speech: `Please visit the Alexa app to grant access to your postcode`,
+  card: {
+    type: 'AskForPermissionsConsent',
+    permissions: ['read::alexa:device:all:address:country_and_postal_code'],
+  },
+});
+
+/**
+ * Build a help response
+ */
+const helpResponse = () => ({
+  speech: `Try asking for the pollen count near you`,
+});
+
+/**
+ * Build a stop / cancel response
+ */
+const stopResponse = () => ({
+  speech: `Goodbye!`,
+});
+
+/**
+ * Reply to Alexa
+ */
+const sendResponse = callback => ({ speech, card = null }) => {
+  const defaultCard = {
+    type: 'Simple',
+    title: 'Pollen count',
+    content: speech,
+  };
+
+  console.log('Card:', card);
+  console.log('Using:', card || defaultCard);
+
   callback(null, {
     version: '1.0',
     response: {
@@ -54,11 +158,7 @@ const sendResponse = callback => speech => {
         type: 'PlainText',
         text: speech,
       },
-      card: {
-        type: 'Simple',
-        title: 'Pollen count',
-        content: speech,
-      },
+      card: card || defaultCard,
       shouldEndSession: true,
     },
   });
