@@ -108,7 +108,7 @@ const fetchLatLng = postcode =>
  * Use the latitude and longitude to get the pollen forecast
  */
 const fetchPollenForecast = ({ postcode, lat, lng }) =>
-  fetch(`https://socialpollencount.co.uk/api/forecast?location=[${lat},${lng}]`)
+  fetch(`http://socialpollencount.co.uk/api/forecast?location=[${lat},${lng}]`)
     .then(res => res.json())
     .then(({ date, forecast }) => {
       // We get seven days of data back, so find today's
